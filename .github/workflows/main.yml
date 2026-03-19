@@ -1,12 +1,12 @@
-name: jj
+name: kkkk
 on:
   workflow_dispatch:
     inputs:
       source_url:
-        description: 'رابط المصدر m3u8'
+        description: 'رابط المصدر (m3u8 أو HLS أو أي بث مباشر)'
         required: true
       duration_minutes:
-        description: 'المدة بالدقائق'
+        description: 'مدة النقل بالدقائق (5–1440)'
         required: true
         default: '10'
 
@@ -16,48 +16,38 @@ jobs:
     timeout-minutes: 1500
     steps:
       - name: تثبيت ffmpeg
-        run: sudo apt update && sudo apt install -y ffmpeg
+        run: |
+          sudo apt update && sudo apt install -y ffmpeg
 
-      - name: نقل البث (copy مع تصليح كامل)
-        env:
-          RTMP_BASE: ${{ secrets.VK_RTMP_URL }}
-          STREAM_KEY: ${{ secrets.VK_STREAM_KEY }}
+      - name: نقل البث (copy فقط)
         run: |
           MINUTES="${{ inputs.duration_minutes }}"
           DURATION_SECONDS=$(( MINUTES * 60 ))
 
-          echo "=== DEBUG INFO ==="
-          echo "RTMP_BASE length: ${#RTMP_BASE} chars (يجب أن يكون >0)"
-          echo "STREAM_KEY length: ${#STREAM_KEY} chars (يجب أن يكون >10)"
-          if [ -z "$RTMP_BASE" ] || [ -z "$STREAM_KEY" ]; then
-            echo "خطأ كبير: الـ secrets فارغة! أعد إضافتها في Settings → Secrets and variables → Actions."
-            exit 1
-          fi
+          # ← غيّر هنا الـ RTMP URL والـ Stream Key الثابتين بتوعك
+          RTMP_BASE="rtmp://vsu.mycdn.me/input/"          # ← غيّر ده للـ URL الحقيقي من VK
+          STREAM_KEY="1125899946318803_1125899946318803_71_v44fib4mhe"     # ← غيّر ده للـ key الطويل كامل
 
           TARGET="${RTMP_BASE}/${STREAM_KEY}"
-          # لو الاتصال فشل بعد ده، جرب غيّر TARGET لـ واحد من دول (علّق اللي فوق):
-          # TARGET="$RTMP_BASE"                           # لو الكي مدمج في الـ URL
-          # TARGET="${RTMP_BASE}/live/${STREAM_KEY}"
-          # TARGET="rtmps://${RTMP_BASE#rtmp://}/${STREAM_KEY}"  # لو الـ URL rtmp ويحتاج rtmps
 
           SOURCE="${{ inputs.source_url }}"
 
-          echo "المصدر: $SOURCE"
-          echo "الـ RTMP target الكامل: $TARGET"
+          echo "جاري نقل البث من:"
+          echo "  → $SOURCE"
+          echo "إلى:"
+          echo "  → $TARGET"
           echo "المدة: $MINUTES دقيقة ($DURATION_SECONDS ثانية)"
-          echo "==================="
 
           ffmpeg \
             -reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 \
             -re \
-            -probesize 10M -analyzeduration 10M \
             -i "$SOURCE" \
             -c copy \
             -f flv \
             -t "$DURATION_SECONDS" \
-            "$TARGET" 2> ffmpeg_relay.log || true
+            "$TARGET" 2> ffmpeg.log || true
 
+          echo ""
           echo "انتهى النقل."
-          echo "=== آخر 70 سطر من الـ log (مهم للتصحيح):"
-          tail -n 70 ffmpeg_relay.log
-          echo "==================="
+          echo "آخر 60 سطر من الـ log (لو فيه خطأ):"
+          tail -n 60 ffmpeg.log
