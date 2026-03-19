@@ -4,52 +4,57 @@ on:
   workflow_dispatch:
     inputs:
       source_url:
-        description: 'رابط المصدر (m3u8 أو HLS أو أي بث مباشر)'
+        description: 'رابط المصدر (m3u8 أو HLS)'
         required: true
       duration_minutes:
-        description: 'مدة النقل بالدقائق (5–1440)'
+        description: 'مدة النقل (5–1440)'
         required: true
-        default: '60'
+        default: '10'  # ابدأ بـ 10 عشان التجربة
 
 jobs:
   relay-to-vk:
     runs-on: ubuntu-latest
-    timeout-minutes: 1500  # ~25 ساعة، زد لو عايز
+    timeout-minutes: 1500
     steps:
       - name: تثبيت ffmpeg
-        run: |
-          sudo apt update && sudo apt install -y ffmpeg
+        run: sudo apt update && sudo apt install -y ffmpeg
 
-      - name: بدء نقل البث إلى VK (copy stream)
+      - name: نقل البث (مع debug)
         env:
-          RTMP_URL: ${{ secrets.VK_RTMP_URL }}
+          RTMP_BASE: ${{ secrets.VK_RTMP_URL }}
           STREAM_KEY: ${{ secrets.VK_STREAM_KEY }}
         run: |
           MINUTES="${{ inputs.duration_minutes }}"
           DURATION_SECONDS=$(( MINUTES * 60 ))
 
-          # TARGET: غالبًا في VK permanent key يكون URL + / + KEY
-          # لو الـ URL عندك خلاص كامل (مش محتاج /KEY)، غيّر لـ TARGET="$RTMP_URL"
-          TARGET="${RTMP_URL}/${STREAM_KEY}"
+          echo "=== DEBUG INFO ==="
+          echo "RTMP_BASE length: ${#RTMP_BASE}"
+          echo "STREAM_KEY length: ${#STREAM_KEY}"
+          if [ -z "$RTMP_BASE" ]; then echo "ERROR: RTMP_BASE فارغ!"; exit 1; fi
+          if [ -z "$STREAM_KEY" ]; then echo "ERROR: STREAM_KEY فارغ!"; exit 1; fi
+
+          # TARGET constructions - جرب الأولى، لو مش شغال غيّر في الكود
+          TARGET="${RTMP_BASE}/${STREAM_KEY}"
+          # لو مش شغال، فعّل واحد من دول (علّق اللي فوق وشيل # من واحد):
+          # TARGET="$RTMP_BASE"   # لو الكي مدمج
+          # TARGET="${RTMP_BASE}/input/${STREAM_KEY}"
+          # TARGET="rtmps://${RTMP_BASE#rtmp://}/${STREAM_KEY}"  # لو محتاج rtmps
 
           SOURCE="${{ inputs.source_url }}"
 
-          echo "جاري نقل البث من:"
-          echo "  → $SOURCE"
-          echo "إلى VK (permanent):"
-          echo "  → $TARGET"
+          echo "المصدر: $SOURCE"
+          echo "TARGET الكامل: $TARGET"
           echo "المدة: $MINUTES دقيقة"
+          echo "==================="
 
-          ffmpeg -i "$SOURCE" \
+          ffmpeg -reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 \
+            -i "$SOURCE" \
             -c copy \
-            -bsf:a aac_adtstoasc \     # ضروري غالبًا لـ HLS/m3u8 عشان الصوت يشتغل في RTMP
+            -bsf:a aac_adtstoasc \
             -f flv \
-            -re \                       # قراءة realtime عشان البث المباشر
+            -re \
             -t "$DURATION_SECONDS" \
-            "$TARGET" 2> ffmpeg_relay.log || true
+            "$TARGET" 2> ffmpeg.log || true
 
-          echo "انتهى النقل بعد $MINUTES دقيقة."
-          echo ""
-          echo "لو فيه مشكلة (صوت مش موجود، اتصال فشل، إلخ)، شوف الـ log:"
-          echo "آخر 50 سطر:"
-          tail -n 50 ffmpeg_relay.log
+          echo "انتهى. Log الأخير:"
+          tail -n 60 ffmpeg.log
