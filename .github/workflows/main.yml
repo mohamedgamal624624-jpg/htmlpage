@@ -1,0 +1,55 @@
+name: html
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_url:
+        description: 'رابط المصدر (m3u8 أو HLS أو أي بث مباشر)'
+        required: true
+      duration_minutes:
+        description: 'مدة النقل بالدقائق (5–1440)'
+        required: true
+        default: '60'
+
+jobs:
+  relay-to-vk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 1500  # ~25 ساعة، زد لو عايز
+    steps:
+      - name: تثبيت ffmpeg
+        run: |
+          sudo apt update && sudo apt install -y ffmpeg
+
+      - name: بدء نقل البث إلى VK (copy stream)
+        env:
+          RTMP_URL: ${{ secrets.VK_RTMP_URL }}
+          STREAM_KEY: ${{ secrets.VK_STREAM_KEY }}
+        run: |
+          MINUTES="${{ inputs.duration_minutes }}"
+          DURATION_SECONDS=$(( MINUTES * 60 ))
+
+          # TARGET: غالبًا في VK permanent key يكون URL + / + KEY
+          # لو الـ URL عندك خلاص كامل (مش محتاج /KEY)، غيّر لـ TARGET="$RTMP_URL"
+          TARGET="${RTMP_URL}/${STREAM_KEY}"
+
+          SOURCE="${{ inputs.source_url }}"
+
+          echo "جاري نقل البث من:"
+          echo "  → $SOURCE"
+          echo "إلى VK (permanent):"
+          echo "  → $TARGET"
+          echo "المدة: $MINUTES دقيقة"
+
+          ffmpeg -i "$SOURCE" \
+            -c copy \
+            -bsf:a aac_adtstoasc \     # ضروري غالبًا لـ HLS/m3u8 عشان الصوت يشتغل في RTMP
+            -f flv \
+            -re \                       # قراءة realtime عشان البث المباشر
+            -t "$DURATION_SECONDS" \
+            "$TARGET" 2> ffmpeg_relay.log || true
+
+          echo "انتهى النقل بعد $MINUTES دقيقة."
+          echo ""
+          echo "لو فيه مشكلة (صوت مش موجود، اتصال فشل، إلخ)، شوف الـ log:"
+          echo "آخر 50 سطر:"
+          tail -n 50 ffmpeg_relay.log
