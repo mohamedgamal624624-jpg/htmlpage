@@ -1,15 +1,15 @@
-name: html
+name: jjj
 
 on:
   workflow_dispatch:
     inputs:
       source_url:
-        description: 'رابط المصدر (m3u8 أو HLS)'
+        description: 'رابط المصدر m3u8'
         required: true
       duration_minutes:
-        description: 'مدة النقل (5–1440)'
+        description: 'المدة بالدقائق'
         required: true
-        default: '10'  # ابدأ بـ 10 عشان التجربة
+        default: '10'
 
 jobs:
   relay-to-vk:
@@ -19,7 +19,7 @@ jobs:
       - name: تثبيت ffmpeg
         run: sudo apt update && sudo apt install -y ffmpeg
 
-      - name: نقل البث (مع debug)
+      - name: نقل البث (copy مع تصليح)
         env:
           RTMP_BASE: ${{ secrets.VK_RTMP_URL }}
           STREAM_KEY: ${{ secrets.VK_STREAM_KEY }}
@@ -27,34 +27,36 @@ jobs:
           MINUTES="${{ inputs.duration_minutes }}"
           DURATION_SECONDS=$(( MINUTES * 60 ))
 
-          echo "=== DEBUG INFO ==="
-          echo "RTMP_BASE length: ${#RTMP_BASE}"
-          echo "STREAM_KEY length: ${#STREAM_KEY}"
-          if [ -z "$RTMP_BASE" ]; then echo "ERROR: RTMP_BASE فارغ!"; exit 1; fi
-          if [ -z "$STREAM_KEY" ]; then echo "ERROR: STREAM_KEY فارغ!"; exit 1; fi
+          echo "=== DEBUG START ==="
+          echo "RTMP_BASE length: ${#RTMP_BASE} chars"
+          echo "STREAM_KEY length: ${#STREAM_KEY} chars"
+          if [ -z "$RTMP_BASE" ] || [ -z "$STREAM_KEY" ]; then
+            echo "ERROR: واحد أو الاتنين secrets فارغين! أعد إضافتهم في Settings → Secrets."
+            exit 1
+          fi
 
-          # TARGET constructions - جرب الأولى، لو مش شغال غيّر في الكود
           TARGET="${RTMP_BASE}/${STREAM_KEY}"
-          # لو مش شغال، فعّل واحد من دول (علّق اللي فوق وشيل # من واحد):
-          # TARGET="$RTMP_BASE"   # لو الكي مدمج
+          # لو الـ key مش بيتركب كده، جرب غيّر TARGET لـ واحد من دول:
+          # TARGET="$RTMP_BASE"
           # TARGET="${RTMP_BASE}/input/${STREAM_KEY}"
-          # TARGET="rtmps://${RTMP_BASE#rtmp://}/${STREAM_KEY}"  # لو محتاج rtmps
+          # TARGET="rtmps://${RTMP_BASE#rtmp://}/${STREAM_KEY}"
 
           SOURCE="${{ inputs.source_url }}"
 
-          echo "المصدر: $SOURCE"
-          echo "TARGET الكامل: $TARGET"
-          echo "المدة: $MINUTES دقيقة"
+          echo "Source: $SOURCE"
+          echo "Target (full RTMP): $TARGET"
+          echo "Duration: $MINUTES min ($DURATION_SECONDS sec)"
           echo "==================="
 
-          ffmpeg -reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 \
+          ffmpeg \
+            -reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 \
+            -re \                          # هنا قبل -i
             -i "$SOURCE" \
             -c copy \
-            -bsf:a aac_adtstoasc \
             -f flv \
-            -re \
             -t "$DURATION_SECONDS" \
             "$TARGET" 2> ffmpeg.log || true
 
-          echo "انتهى. Log الأخير:"
+          echo "انتهى. Log الأخير (60 سطر):"
           tail -n 60 ffmpeg.log
+          echo "=== DEBUG END ==="
