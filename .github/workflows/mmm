@@ -1,0 +1,48 @@
+name: Stream Relay
+
+on:
+  workflow_dispatch:
+    inputs:
+      stream_url:
+        description: "Input stream (m3u8, ts, etc.)"
+        required: true
+      rtmp_server:
+        description: "RTMP server (e.g. rtmp://live.twitch.tv/app)"
+        required: true
+      stream_key:
+        description: "Stream key"
+        required: true
+      duration_minutes:
+        description: "Duration in minutes"
+        required: true
+        default: "60"
+
+jobs:
+  relay:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Install FFmpeg
+        run: |
+          sudo apt update
+          sudo apt install -y ffmpeg
+
+      - name: Start Stream Relay
+        run: |
+          INPUT="${{ github.event.inputs.stream_url }}"
+          RTMP="${{ github.event.inputs.rtmp_server }}"
+          KEY="${{ github.event.inputs.stream_key }}"
+          DURATION_MIN="${{ github.event.inputs.duration_minutes }}"
+
+          # Convert minutes to seconds
+          DURATION_SEC=$((DURATION_MIN * 60))
+
+          echo "Starting stream relay..."
+          echo "Input: $INPUT"
+          echo "Output: $RTMP/$KEY"
+          echo "Duration: $DURATION_MIN minutes"
+
+          ffmpeg -re -i "$INPUT" \
+            -c copy \
+            -f flv "$RTMP/$KEY" \
+            -t $DURATION_SEC
